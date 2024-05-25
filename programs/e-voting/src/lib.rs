@@ -1,13 +1,19 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::entrypoint::ProgramResult;
 
 declare_id!("7UfykF9iXWorPS7A3SvgZmJzCTCxpVEqfLyBPw4K51YH");
+
+pub const TOPIC_LENGTH: usize = 32;
 
 #[program]
 pub mod e_voting {
     use super::*;
 
-    pub fn create(ctx: Context<Create>, description: String) -> ProgramResult {
+    pub fn create(ctx: Context<Create>, description: String) -> Result<()> {
+        require!(
+            description.as_bytes().len() <= Proposal::DESCRIPTION_MAXIMUM_LENGTH, 
+            EVotingError::DescriptionTooLong
+        );
+    
         let proposal = &mut ctx.accounts.proposal;
         proposal.description = description;
         proposal.yes_votes = 0;
@@ -36,4 +42,14 @@ pub struct Proposal {
     pub no_votes: u32,
     pub ongoing: bool,
     pub owner: Pubkey,
+}
+
+impl Proposal {
+    pub const DESCRIPTION_MAXIMUM_LENGTH: usize = 50;
+}
+
+#[error_code]
+pub enum EVotingError {
+    #[msg("Cannot initialize, description too long")]
+    DescriptionTooLong
 }

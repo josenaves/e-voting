@@ -22,6 +22,24 @@ describe("e-voting system", () => {
     program.programId
   )
 
+  it("Proposal cannot have large description (greater than 50)", async () => {
+    let should_fail = "This Should Fail"
+    try {
+      await program.methods
+        .create("Very large description that will break the program!")
+        .accounts({
+          user: provider.wallet.publicKey,
+          proposal: proposalPDA,
+        })
+        .rpc();
+    } catch (error) {
+      const err = anchor.AnchorError.parse(error.logs);
+      assert.strictEqual(err.error.errorCode.code, "DescriptionTooLong");
+      should_fail = "Failed"
+    }
+    assert.strictEqual(should_fail, "Failed")
+  });
+
   it("Proposal creation", async () => {
     const tx = await program.methods
       .create(DESCRIPTION)
