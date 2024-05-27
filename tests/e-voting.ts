@@ -4,9 +4,6 @@ import { PublicKey, SystemProgram } from '@solana/web3.js'
 import { EVoting } from "../target/types/e_voting";
 import { assert, expect } from "chai";
 
-const PROPOSAL_SEED = "evoting_proposal_seed";
-const VOTE_SEED = "evoting_vote_seed";
-
 const DESCRIPTION_1 = "Proposal #1";
 const DESCRIPTION_2 = "Proposal #2";
 
@@ -20,28 +17,24 @@ describe("e-voting system", () => {
   const admin = anchor.web3.Keypair.generate();
   const joe = anchor.web3.Keypair.generate();
   const juliana = anchor.web3.Keypair.generate();
-
-  console.log("program.programId", program.programId);
-  console.log("admin", admin.publicKey);
-  console.log("joe", joe.publicKey);
-  console.log("juliana", juliana.publicKey);
+  const neto = anchor.web3.Keypair.generate();
 
   before("prepare", async () => {
     await airdrop(anchor.getProvider().connection, admin.publicKey);
     await airdrop(anchor.getProvider().connection, joe.publicKey);
     await airdrop(anchor.getProvider().connection, juliana.publicKey);
+    await airdrop(anchor.getProvider().connection, neto.publicKey);
   })
 
   it("Proposal cannot have large description (greater than 50)", async () => {
     let veryLargeDescription = "Very large description that will break the program!";
 
-    const [proposalPDA] = getProposalAddress(veryLargeDescription, admin.publicKey, program.programId);
-    console.log("proposalPDA", proposalPDA);
+    const [proposalPDA] = getProposalAddress(0, admin.publicKey, program.programId);
 
     let should_fail = "This Should Fail"
     try {
       await program.methods
-        .create(veryLargeDescription)
+        .create(0, veryLargeDescription)
         .accounts({
           user: admin.publicKey,
           proposal: proposalPDA,
@@ -58,11 +51,9 @@ describe("e-voting system", () => {
   });
 
   it("Proposal creation #1", async () => {
-    const [proposalPDA] = getProposalAddress(DESCRIPTION_1, admin.publicKey, program.programId);
-    console.log("proposalPDA", proposalPDA);
-
+    const [proposalPDA] = getProposalAddress(1, admin.publicKey, program.programId);
     const tx = await program.methods
-      .create(DESCRIPTION_1)
+      .create(1, DESCRIPTION_1)
       .accounts({
         user: admin.publicKey,
         proposal: proposalPDA,
@@ -71,10 +62,7 @@ describe("e-voting system", () => {
       .signers([admin])
       .rpc({ commitment: "confirmed" });
 
-    console.log("Your transaction signature", tx);
-
-    let proposal = await program.account.proposal.fetch(proposalPDA);
-    console.log("Proposal", proposal);
+    const proposal = await program.account.proposal.fetch(proposalPDA);
 
     expect(proposal.description).to.equal(DESCRIPTION_1);
     expect(proposal.noVotes).to.equal(0);
@@ -82,13 +70,10 @@ describe("e-voting system", () => {
     expect(proposal.ongoing).to.equal(true);
   });
 
-
   it("Proposal creation #2", async () => {
-    const [proposalPDA] = getProposalAddress(DESCRIPTION_2, admin.publicKey, program.programId);
-    console.log("proposalPDA", proposalPDA);
-
+    const [proposalPDA] = getProposalAddress(2, admin.publicKey, program.programId);
     const tx = await program.methods
-      .create(DESCRIPTION_2)
+      .create(2, DESCRIPTION_2)
       .accounts({
         user: admin.publicKey,
         proposal: proposalPDA,
@@ -97,10 +82,7 @@ describe("e-voting system", () => {
       .signers([admin])
       .rpc({ commitment: "confirmed" });
 
-    console.log("Your transaction signature", tx);
-
-    let proposal = await program.account.proposal.fetch(proposalPDA);
-    console.log("Proposal", proposal);
+    const proposal = await program.account.proposal.fetch(proposalPDA);
 
     expect(proposal.description).to.equal(DESCRIPTION_2);
     expect(proposal.noVotes).to.equal(0);
@@ -108,18 +90,11 @@ describe("e-voting system", () => {
     expect(proposal.ongoing).to.equal(true);
   });
 
-  it("Joe is voting yes", async () => {
-    let [proposalPDA] = getProposalAddress(DESCRIPTION_1, admin.publicKey, program.programId);
-    console.log("proposalPDA", proposalPDA);
-
-    let [votePDA] = getVoteAddress(joe.publicKey, proposalPDA, program.programId);
-    console.log("votePDA", votePDA);
-
-    console.log("joe.publicKey", joe.publicKey);
-    console.log("SystemProgram.programId", SystemProgram.programId);
-
+  it("Joe is voting yes (proposal #1)", async () => {
+    const [proposalPDA] = getProposalAddress(1, admin.publicKey, program.programId);
+    const [votePDA] = getVoteAddress(joe.publicKey, proposalPDA, program.programId);
     const tx = await program.methods
-      .voteYes(DESCRIPTION_1)
+      .voteYes()
       .accounts({
         user: joe.publicKey,
         proposal: proposalPDA,
@@ -127,54 +102,65 @@ describe("e-voting system", () => {
         systemProgram: SystemProgram.programId,
       })
       .signers([joe])
-      // .rpc({ commitment: "confirmed" });
-      .rpc({ skipPreflight: true});
+      .rpc({ commitment: "confirmed" });
 
-    console.log("Your transaction signature", tx);
+    const proposal = await program.account.proposal.fetch(proposalPDA);
+    const vote = await program.account.vote.fetch(votePDA);
 
-    // let proposal = await program.account.proposal.fetch(proposalPDA);
-    // console.log("Proposal", proposal);
-
-    // let vote = await program.account.vote.fetch(votePDA);
-    // console.log("Vote", vote);
+    expect(proposal.yesVotes).to.equal(1);
+    expect(proposal.noVotes).to.equal(0);
   });
 
-//   it("Juliana is voting no", async () => {
-//     let [proposalPDA] = getProposalAddress(admin.publicKey, program.programId);
-//     console.log("proposalPDA", proposalPDA);
+  it("Juliana is voting no (proposal #1)", async () => {
+    const [proposalPDA] = getProposalAddress(1, admin.publicKey, program.programId);
+    const [votePDA] = getVoteAddress(juliana.publicKey, proposalPDA, program.programId);
+    const tx = await program.methods
+      .voteNo()
+      .accounts({
+        user: juliana.publicKey,
+        proposal: proposalPDA,
+        vote: votePDA,
+        systemProgram: SystemProgram.programId
+      })
+      .signers([juliana])
+      .rpc({ commitment: "confirmed" });
 
-//     let [votePDA] = getVoteAddress(juliana.publicKey, proposalPDA, program.programId);
-//     console.log("votePDA", votePDA);
-// 4
-//     const tx = await program.methods
-//       .voteNo()
-//       .accounts({
-//         user: juliana.publicKey,
-//         proposal: proposalPDA,
-//         vote: votePDA,
-//         systemProgram: SystemProgram.programId
-//       })
-//       .signers([juliana])
-//       // .rpc({ commitment: "confirmed" });
-//       .rpc({ skipPreflight: true});
+    const proposal = await program.account.proposal.fetch(proposalPDA);
+    const vote = await program.account.vote.fetch(votePDA);
 
-//     console.log("Your transaction signature", tx);
+    expect(proposal.yesVotes).to.equal(1);
+    expect(proposal.noVotes).to.equal(1);
+  });
 
-//     let proposal = await program.account.proposal.fetch(proposalPDA);
-//     console.log("Proposal", proposal);
+  it("Neto is voting no (proposal #1)", async () => {
+    const [proposalPDA] = getProposalAddress(1, admin.publicKey, program.programId);
+    const [votePDA] = getVoteAddress(neto.publicKey, proposalPDA, program.programId);
+    const tx = await program.methods
+      .voteNo()
+      .accounts({
+        user: neto.publicKey,
+        proposal: proposalPDA,
+        vote: votePDA,
+        systemProgram: SystemProgram.programId
+      })
+      .signers([neto])
+      .rpc({ commitment: "confirmed" });
 
-//     let vote = await program.account.vote.fetch(votePDA);
-//     console.log("Vote", vote);
-//   });
+    const proposal = await program.account.proposal.fetch(proposalPDA);
+    const vote = await program.account.vote.fetch(votePDA);
+
+    expect(proposal.yesVotes).to.equal(1);
+    expect(proposal.noVotes).to.equal(2);
+  });
 
 });
 
-function getProposalAddress(description: String, author: PublicKey, programID: PublicKey) {
+function getProposalAddress(pid: number, author: PublicKey, programID: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from(description),
-      Buffer.from(PROPOSAL_SEED),
-      author.toBuffer()
+      Buffer.from("proposal"),
+      author.toBuffer(),
+      Buffer.from([pid])
     ], 
     programID
   );
@@ -183,9 +169,9 @@ function getProposalAddress(description: String, author: PublicKey, programID: P
 function getVoteAddress(author: PublicKey, proposal: PublicKey, programID: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from(VOTE_SEED),
-      author.toBuffer(),
+      Buffer.from("vote"),
       proposal.toBuffer(),
+      author.toBuffer(),
     ], 
     programID
   );

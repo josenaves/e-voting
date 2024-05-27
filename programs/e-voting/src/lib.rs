@@ -2,20 +2,18 @@ use anchor_lang::prelude::*;
 
 declare_id!("7UfykF9iXWorPS7A3SvgZmJzCTCxpVEqfLyBPw4K51YH");
 
-pub const PROPOSAL_SEED : &str= "evoting_proposal_seed";
-pub const VOTE_SEED : &str= "evoting_vote_seed";
-
 #[program]
 pub mod e_voting {
     use super::*;
 
-    pub fn create(ctx: Context<CreateProposal>, description: String) -> Result<()> {
+    pub fn create(ctx: Context<CreateProposal>, pid: u8, description: String) -> Result<()> {
         require!(
             description.as_bytes().len() <= Proposal::DESCRIPTION_MAXIMUM_LENGTH, 
             EVotingError::DescriptionTooLong
         );
     
         let proposal = &mut ctx.accounts.proposal;
+        proposal.pid = pid;
         proposal.description = description;
         proposal.yes_votes = 0;
         proposal.no_votes = 0;
@@ -27,42 +25,39 @@ pub mod e_voting {
         Ok(())
     }
 
-    pub fn vote_yes(ctx: Context<AddVote>, description: String) -> Result<()> {
-        vote(ctx, VoteType::YesVote, description)
+    pub fn vote_yes(ctx: Context<AddVote>) -> Result<()> {
+        vote(ctx, VoteType::YesVote)
     }
 
-    pub fn vote_no(ctx: Context<AddVote>, description: String) -> Result<()> {
-        vote(ctx, VoteType::NoVote, description)
+    pub fn vote_no(ctx: Context<AddVote>) -> Result<()> {
+        vote(ctx, VoteType::NoVote)
     }
 }
 
-fn vote(ctx: Context<AddVote>, vote_type: VoteType, description: String) -> Result<()> {
+fn vote(ctx: Context<AddVote>, vote_type: VoteType) -> Result<()> {
     let proposal = &mut ctx.accounts.proposal;
     let vote = &mut ctx.accounts.vote;
     
-    msg!("proposal: {}", proposal.key());
-    msg!("vote: {}", vote.key());
-
     //  proposal must be ongoing
     require!(
         proposal.ongoing == true,
         EVotingError::VotingSessionIsClosed
     );
     
-    // vote.user = ctx.accounts.user.key();
     vote.user = *ctx.accounts.user.key;
     vote.proposal = proposal.key();
     vote.bump = ctx.bumps.vote;
-    vote.description = description;
 
     match vote_type {
         VoteType::YesVote => {
-            proposal.yes_votes = proposal.yes_votes.checked_add(1).ok_or(EVotingError::MaxYesVotesReached)?;
             vote.vote = VoteType::YesVote;
+            proposal.yes_votes = 
+                proposal.yes_votes.checked_add(1).ok_or(EVotingError::MaxYesVotesReached)?;
         }
         VoteType::NoVote => {
-            proposal.no_votes = proposal.no_votes.checked_add(1).ok_or(EVotingError::MaxNoVotesReached)?;
             vote.vote = VoteType::NoVote;
+            proposal.no_votes = 
+                proposal.no_votes.checked_add(1).ok_or(EVotingError::MaxNoVotesReached)?;
         }
     }
 
@@ -73,16 +68,16 @@ fn vote(ctx: Context<AddVote>, vote_type: VoteType, description: String) -> Resu
 // Instructions
 
 #[derive(Accounts)]
-#[instruction(description: String)]
+#[instruction(pid: u8)]
 pub struct CreateProposal<'info> {
     #[account(
         init, 
         payer=user, 
         space=8 + Proposal::INIT_SPACE, 
         seeds=[
-            description.as_bytes(),
-            PROPOSAL_SEED.as_bytes(),
+            b"proposal",
             user.key().as_ref(),
+            &[pid]
         ], 
         bump
     )]  
@@ -93,32 +88,33 @@ pub struct CreateProposal<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(description: String)]
 pub struct AddVote<'info> {
+    #[account(
+        mut,
+        seeds = [
+            b"proposal".as_ref(), 
+            proposal.owner.as_ref(),
+            &[proposal.pid]
+        ], 
+        bump = proposal.bump
+    )]
+    pub proposal: Account<'info, Proposal>,
+
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(
-        init,
-        payer = user,
+
+    #[account(init, 
+        payer = user, 
         space = 8 + Vote::INIT_SPACE,
         seeds = [
-            VOTE_SEED.as_bytes(), 
-            user.key().as_ref(),
-            proposal.key().as_ref(),
+            b"vote".as_ref(), 
+            proposal.key().as_ref(), 
+            user.key().as_ref()
         ], 
         bump
     )]
     pub vote: Account<'info, Vote>,
-    #[account(
-        mut,
-        seeds = [
-            description.as_bytes(),
-            PROPOSAL_SEED.as_bytes(),
-            user.key().as_ref(),
-        ],
-        bump = proposal.bump
-    )]
-    pub proposal: Account<'info, Proposal>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -128,6 +124,7 @@ pub struct AddVote<'info> {
 #[account]
 #[derive(InitSpace)]
 pub struct Proposal {
+    pub pid: u8,
     #[max_len(50)]
     pub description: String,
     pub yes_votes: u32,
@@ -147,8 +144,6 @@ pub struct Vote {
     pub user: Pubkey,
     pub proposal: Pubkey,
     pub vote: VoteType,
-    #[max_len(50)]
-    pub description: String,
     pub bump: u8,
 }
 
